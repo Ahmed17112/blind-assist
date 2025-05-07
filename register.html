@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Up - Blind Assist</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header>
+    <h1>Create a New Account</h1>
+  </header>
+
+  <div class="container">
+    <h2>Register</h2>
+
+    <!-- Email Field -->
+    <div class="form-group">
+      <input type="email" id="registerEmail" placeholder="Email" />
+      <label for="registerEmail">Email</label>
+    </div>
+
+    <!-- Password Field -->
+    <div class="form-group">
+      <input type="password" id="registerPassword" placeholder="Password" />
+      <label for="registerPassword">Password</label>
+    </div>
+
+    <!-- Confirm Password Field -->
+    <div class="form-group">
+      <input type="password" id="registerConfirmPassword" placeholder="Confirm Password" />
+      <label for="registerConfirmPassword">Confirm Password</label>
+    </div>
+
+    <button id="registerButton">Register</button>
+
+    <p>
+      Already have an account? <a href="index.html">Login</a>
+    </p>
+
+    <!-- Error Message -->
+    <p id="registerError" style="color:red; display:none;"></p> <!-- Hidden by default -->
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

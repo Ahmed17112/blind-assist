@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Home - Blind Assist</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+    header {
+      background-color: #35424a;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    .container {
+      width: 90%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      margin: 10px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .card {
+      background-color: white;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .map-container {
+      margin: 20px 0;
+      border-radius: 5px;
+      overflow: hidden;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #coordinatesDisplay {
+      background-color: #e9ecef;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 15px 0;
+    }
+    #gpsStatus {
+      padding: 10px;
+      border-radius: 5px;
+      margin: 15px 0;
+      font-weight: bold;
+    }
+    .connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+  <!-- Mapbox CSS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.3.1/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.3.1/mapbox-gl.js"></script>
+</head>
+<body>
+
+  <header>
+    <h1>Blind Assist: Smart Mobility and Navigation Device</h1>
+  </header>
+
+  <div class="container">
+    <div id="gpsStatus" class="disconnected">GPS Status: Connecting to ESP32...</div>
+    
+    <h2>Manage Blind People</h2>
+    <!-- Button to add a new blind person -->
+    <button id="addBlindPersonButton">Add Blind Person</button>
+
+    <h3>Your Monitored Blind People</h3>
+    <div id="blindPeopleList">
+      <!-- Blind people cards will be inserted here dynamically -->
+    </div>
+
+    <h3>Blind Person's Location</h3>
+    <!-- Mapbox Map Container -->
+    <div class="map-container" id="map" style="width: 100%; height: 500px;"></div>
+
+    <h3>Current GPS Coordinates</h3>
+    <div id="coordinatesDisplay">
+      <p>Latitude: <span id="latDisplay">Loading...</span></p>
+      <p>Longitude: <span id="lngDisplay">Loading...</span></p>
+      <p>Last Updated: <span id="lastUpdated">Never</span></p>
+    </div>
+
+    <h3>Set Destination</h3>
+    <p>Click on the map to set a destination for the blind person. The system will guide the blind person.</p>
+    <div id="destinationCoordinates">
+      <p>Destination Latitude: <span id="destLatDisplay">N/A</span></p>
+      <p>Destination Longitude: <span id="destLngDisplay">N/A</span></p>
+    </div>
+    <button id="sendTargetButton">Send Target to Blind Person</button>
+  </div>
+
+  <script>
+    // ESP32 configuration
+    const ESP32_IP = "192.168.4.1";
+    const ESP32_GPS_ENDPOINT = `http://${ESP32_IP}/`;
+
+    let map;
+    let currentMarker;
+    let destinationMarker;
+    let currentLocation = { lat: 24.7136, lng: 46.6753 };  // Default location (Riyadh)
+    let gpsConnected = false;
+
+    // Initialize the Mapbox map
+    function initMap() {
+      // Set your Mapbox access token
+      mapboxgl.accessToken = 'pk.eyJ1IjoiYWhtZWQxNzE3IiwiYSI6ImNtOXEwOW81ajFnNGwybnF1aG4zcjU5OWEifQ.upl_DmMfS1tHBCx-3IBcnw';
+
+      map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [currentLocation.lng, currentLocation.lat],
+        zoom: 14
+      });
+
+      // Add a marker for the current location
+      currentMarker = new mapboxgl.Marker({ color: "#3FB1CE" })
+        .setLngLat([currentLocation.lng, currentLocation.lat])
+        .addTo(map);
+
+      // Add a different colored marker for the destination
+      destinationMarker = new mapboxgl.Marker({ color: "#FF0000" })
+        .addTo(map);
+      destinationMarker.remove(); // Hide it initially
+
+      // Listen for click events on the map to set destination
+      map.on("click", function (event) {
+        const destination = event.lngLat;
+        document.getElementById("destLatDisplay").textContent = destination.lat.toFixed(6);
+        document.getElementById("destLngDisplay").textContent = destination.lng.toFixed(6);
+
+        // Update the destination marker position to the clicked location
+        destinationMarker.setLngLat(destination).addTo(map);
+      });
+
+      // Start fetching GPS data from ESP32
+      fetchGPSData();
+    }
+
+    // Function to fetch GPS data from ESP32
+    function fetchGPSData() {
+      fetch(ESP32_GPS_ENDPOINT)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          // Update GPS connection status
+          gpsConnected = true;
+          document.getElementById("gpsStatus").className = "connected";
+          document.getElementById("gpsStatus").textContent = "GPS Status: Connected";
+
+          // Update current location
+          if (data && data.latitude && data.longitude) {
+            currentLocation = { 
+              lat: parseFloat(data.latitude), 
+              lng: parseFloat(data.longitude) 
+            };
+
+            // Update display
+            document.getElementById("latDisplay").textContent = currentLocation.lat.toFixed(6);
+            document.getElementById("lngDisplay").textContent = currentLocation.lng.toFixed(6);
+            document.getElementById("lastUpdated").textContent = new Date().toLocaleTimeString();
+
+            // Update marker position
+            currentMarker.setLngLat([currentLocation.lng, currentLocation.lat]);
+
+            // Center map on current location if it's the first update
+            if (map && !map.isMoving()) {
+              map.flyTo({
+                center: [currentLocation.lng, currentLocation.lat],
+                zoom: 15
+              });
+            }
+
+            // Update a monitored blind person if one is selected
+            updateSelectedBlindPerson();
+          }
+        })
+        .catch(error => {
+          console.error("Error fetching GPS data:", error);
+          gpsConnected = false;
+          document.getElementById("gpsStatus").className = "disconnected";
+          document.getElementById("gpsStatus").textContent = "GPS Status: Disconnected - Check ESP32";
+        })
+        .finally(() => {
+          // Fetch GPS data every 2 seconds
+          setTimeout(fetchGPSData, 2000);
+        });
+    }
+
+    // Function to send target coordinates to ESP32
+    function sendTargetToESP32(lat, lng) {
+      const targetUrl = `http://${ESP32_IP}/target?lat=${lat}&lng=${lng}`;
+      
+      fetch(targetUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+          return response.text();
+        })
+        .then(data => {
+          alert("Target coordinates sent successfully!");
+          console.log("Target sent to ESP32:", data);
+        })
+        .catch(error => {
+          alert("Failed to send target coordinates. Check ESP32 connection.");
+          console.error("Error sending target to ESP32:", error);
+        });
+    }
+
+    // Add a new blind person
+    document.getElementById('addBlindPersonButton').addEventListener('click', function() {
+      const blindName = prompt("Enter the blind person's name:");
+      if (blindName) {
+        const blindPerson = { 
+          name: blindName, 
+          location: { ...currentLocation }, // Use current GPS location
+          selected: false
+        };
+        let blindPeople = JSON.parse(localStorage.getItem('blindPeople')) || [];
+        blindPeople.push(blindPerson);
+        localStorage.setItem('blindPeople', JSON.stringify(blindPeople));
+        alert('Blind person added!');
+        renderBlindPeople(); // Re-render the list of blind people
+      }
+    });
+
+    // Render the list of blind people
+    function renderBlindPeople() {
+      const blindPeopleList = document.getElementById('blindPeopleList');
+      blindPeopleList.innerHTML = '';
+      let blindPeople = JSON.parse(localStorage.getItem('blindPeople')) || [];
+
+      if (blindPeople.length === 0) {
+        blindPeopleList.innerHTML = '<p>No blind people added yet.</p>';
+        return;
+      }
+
+      blindPeople.forEach((blind, index) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `<strong>${blind.name}</strong><br>Location: Lat ${blind.location.lat.toFixed(6)}, Lng ${blind.location.lng.toFixed(6)}`;
+        
+        // Add a button to select this blind person
+        const selectButton = document.createElement('button');
+        selectButton.textContent = blind.selected ? 'Selected' : 'Select';
+        selectButton.style.backgroundColor = blind.selected ? '#2196F3' : '#4CAF50';
+        selectButton.addEventListener('click', function() {
+          // Deselect all blind people
+          let blindPeople = JSON.parse(localStorage.getItem('blindPeople')) || [];
+          blindPeople.forEach(p => p.selected = false);
+          
+          // Select this one
+          blindPeople[index].selected = true;
+          localStorage.setItem('blindPeople', JSON.stringify(blindPeople));
+          
+          renderBlindPeople(); // Re-render the list
+        });
+
+        card.appendChild(selectButton);
+        blindPeopleList.appendChild(card);
+      });
+    }
+
+    // Update the selected blind person's location with current GPS data
+    function updateSelectedBlindPerson() {
+      let blindPeople = JSON.parse(localStorage.getItem('blindPeople')) || [];
+      const selectedIndex = blindPeople.findIndex(p => p.selected);
+      
+      if (selectedIndex !== -1) {
+        blindPeople[selectedIndex].location = { ...currentLocation };
+        localStorage.setItem('blindPeople', JSON.stringify(blindPeople));
+        renderBlindPeople(); // Update the displayed info
+      }
+    }
+
+    // Send target coordinates when the button is clicked
+    document.getElementById('sendTargetButton').addEventListener('click', function() {
+      const lat = document.getElementById('destLatDisplay').textContent;
+      const lng = document.getElementById('destLngDisplay').textContent;
+      
+      if (lat === 'N/A' || lng === 'N/A') {
+        alert('Please set a destination by clicking on the map first.');
+        return;
+      }
+      
+      sendTargetToESP32(lat, lng);
+    });
+
+    // Initialize the map when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      initMap();
+      renderBlindPeople();
+    });
+  </script>
+
+</body>
+</html>
